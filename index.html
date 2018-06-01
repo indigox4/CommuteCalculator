@@ -18,8 +18,11 @@
       }
 
       table, th, td {
-          border: 1px solid black;
+          border: 0px solid black;
       }      
+      tr:nth-child(even) { background: #CCC};
+      tr:nth-child(odd)  { background: #FFF};
+
     </style>
   </head>
   <body>
@@ -78,9 +81,13 @@
         directionsService.route( request, function( response, status ) {
           if ( status === 'OK' ) {
             var point = response.routes[ 0 ].legs[ 0 ];
-            gMapRequests[reqIndex].bestGuessTime = point.duration_in_traffic.text;
+            
+            
             if( !isDriving ) {
               gMapRequests[reqIndex].status = kSuccess;
+              gMapRequests[reqIndex].bestGuessTime = point.duration.text;
+            } else {
+              gMapRequests[reqIndex].bestGuessTime = point.duration_in_traffic.text;
             }
           } else {
             gMapRequests[reqIndex].status = kFailure;
@@ -133,9 +140,13 @@
             html += "<td>Calculating</td>";
 
           } else if( gMapRequests[i].status === 1 ) {
-            html += "<td>" + gMapRequests[i].bestGuessTime 
-                    + " (" + gMapRequests[i].optimisticTime + " - " 
-                    + gMapRequests[i].pessimisticTime + ")</td>";
+            if( gMapRequests[i].mode === google.maps.DirectionsTravelMode.DRIVING ) {
+              html += "<td>" + gMapRequests[i].bestGuessTime 
+                      + " (" + gMapRequests[i].optimisticTime + " - " 
+                      + gMapRequests[i].pessimisticTime + ")</td>";
+            } else {
+              html += "<td>" + gMapRequests[i].bestGuessTime + "</td>";
+            }
           } else {
             html += "<td>Dunno!</td>";
           }
@@ -150,13 +161,29 @@
         req.start = gPropertyOfInterest;
         req.end = "7120 Hurontario St, Mississauga, ON L5S 1Z8";
         req.departTime = new Date('2018-08-20T08:00:00');
-        startRequest( req );
+        setTimeout( function() {startRequest( req );} ,1);
 
+        // reverse trip
         var req2 = new MapRequest();
         req2.start = req.end;
         req2.end = req.start;
         req2.departTime = new Date('2018-08-20T16:30:00');
-        startRequest( req2 );
+        setTimeout( function() {startRequest( req2 );} ,1000);
+
+        var req3 = new MapRequest();
+        req3.start = gPropertyOfInterest;
+        req3.end = "101 College St, Toronto, ON M5G 1L7";
+        req3.mode = google.maps.DirectionsTravelMode.TRANSIT;
+        req3.departTime = new Date('2018-06-20T09:00:00');
+        setTimeout( function() {startRequest( req3 );} ,2000);
+
+        // reverse trip
+        var req4 = new MapRequest();
+        req4.start = req3.end;
+        req4.end = req3.start;
+        req4.mode = google.maps.DirectionsTravelMode.TRANSIT;        
+        req4.departTime = new Date('2018-06-20T17:30:00');
+        setTimeout( function() {startRequest( req4 );} ,3000);
 
         refreshUI();
 
