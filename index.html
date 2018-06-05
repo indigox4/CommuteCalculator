@@ -27,16 +27,29 @@
   </head>
   <body>
     <div id="map"></div>
+    <div>
+      <form onsubmit="return false" autocomplete="on">
+        <input type="text" size=50 id="PropertyOfInterest" name="PropertyOfInterestName">
+        <input type="submit" onclick="onSubmitClicked()">
+      </form>
+    </div>
     <div id="time"></div>
-    <div id="requests"></div>    
-    <script src="https://maps.googleapis.com/maps/api/js"></script>
+    <div id="requests"></div>
+    <!-- <script src="https://maps.googleapis.com/maps/api/js"></script> -->
     <script>
       var map;
       var gMapRequests = [];
       var kPending = 0;
       var kSuccess = 1;
       var kFailure = 2;
-      var gPropertyOfInterest = "71 Methuen Ave, York, ON, Canada, M6S 1Z7";
+      var gPropertyOfInterest = "";
+
+      function onSubmitClicked() {
+        console.log("onSubmitClicked");
+        gPropertyOfInterest = document.getElementById('PropertyOfInterest').value;
+        console.log("gPropertyOfInterest: " + gPropertyOfInterest);
+        initMap();
+      }
 
       function MapRequest() {
         this.start = "";
@@ -47,7 +60,8 @@
         this.bestGuessTime = "";
         this.optimisticTime = "";
         this.pessimisticTime = "";
-        this.status = kPending; // 0 - pending, 1 - successful, 2 - failed
+        this.status = kPending; 
+        this.errMsg = "";
       }
 
       function addRequest( request ) {
@@ -55,16 +69,14 @@
         gMapRequests.push( request );
       }
 
-      function startRequest( mapRequest ) {
+      function startRequest( mapRequest, delay ) {
+        console.log("start request");
         addRequest( mapRequest );
         var request = {
           origin: mapRequest.start, 
           destination: mapRequest.end, 
-          travelMode: mapRequest.mode
-          // drivingOptions: {
-  	      //   departureTime: new Date('2018-08-20T19:00:00'),
-          //   trafficModel: google.maps.TrafficModel.BEST_GUESS
-          // }
+          travelMode: mapRequest.mode,
+          provideRouteAlternatives: false
         };
         
         var isDriving = (mapRequest.mode === google.maps.DirectionsTravelMode.DRIVING); 
@@ -73,57 +85,63 @@
             departureTime: mapRequest.departTime,
             trafficModel: google.maps.TrafficModel.BEST_GUESS
           }
+        } else {
+          request.transitOptions = {
+            departureTime: mapRequest.departTime
+          }
         }
         
         var reqIndex = mapRequest.index;
-
-        var directionsService = new google.maps.DirectionsService();
-        directionsService.route( request, function( response, status ) {
+        var onResponse = function( response, status ) {
           if ( status === 'OK' ) {
             var point = response.routes[ 0 ].legs[ 0 ];
-            
-            
+
             if( !isDriving ) {
               gMapRequests[reqIndex].status = kSuccess;
               gMapRequests[reqIndex].bestGuessTime = point.duration.text;
             } else {
-              gMapRequests[reqIndex].bestGuessTime = point.duration_in_traffic.text;
+              if( response.request.drivingOptions.trafficModel === 
+                  google.maps.TrafficModel.BEST_GUESS) {
+                gMapRequests[reqIndex].bestGuessTime = point.duration_in_traffic.text;
+              } else if( response.request.drivingOptions.trafficModel === 
+                         google.maps.TrafficModel.OPTIMISTIC ) {
+                gMapRequests[reqIndex].optimisticTime = point.duration_in_traffic.text;
+              } else if( response.request.drivingOptions.trafficModel === 
+                         google.maps.TrafficModel.PESSIMISTIC ) {
+                gMapRequests[reqIndex].pessimisticTime = point.duration_in_traffic.text;
+                gMapRequests[reqIndex].status = kSuccess;
+              }
             }
+            //console.log(JSON.stringify( response ) );
           } else {
             gMapRequests[reqIndex].status = kFailure;
+            gMapRequests[reqIndex].errMsg = status;
+            console.log("Routing error! Response dump:");
+            console.log(JSON.stringify( response ) );
           }
           refreshUI();
-        }); 
+        }
+        
+        setTimeout( function() {
+          var directionsService = new google.maps.DirectionsService();
+          directionsService.route( request, onResponse ); 
+        }, delay );
         
         if( isDriving ) {
-          var request2 = JSON.parse( JSON.stringify(request) );
-          request2.drivingOptions.trafficModel = google.maps.TrafficModel.OPTIMISTIC;
-          request2.drivingOptions.departureTime = request.drivingOptions.departureTime;
+          
+          setTimeout( function() {
+            request.drivingOptions.trafficModel = 
+              google.maps.TrafficModel.OPTIMISTIC;
+            var directionsService = new google.maps.DirectionsService();
+            directionsService.route( request, onResponse ); 
+          }, delay+330 );
 
-          directionsService.route( request2, function( response, status ) {
-            if ( status === 'OK' ) {
-              var point = response.routes[ 0 ].legs[ 0 ];
-              gMapRequests[reqIndex].optimisticTime = point.duration_in_traffic.text;
-            } else {
-              gMapRequests[reqIndex].status = kFailure;
-            }
-            refreshUI();
-          }); 
-
-          var request3 = JSON.parse( JSON.stringify(request) );
-          request3.drivingOptions.trafficModel = google.maps.TrafficModel.PESSIMISTIC;
-          request3.drivingOptions.departureTime = request.drivingOptions.departureTime;
-
-          directionsService.route( request3, function( response, status ) {
-            if ( status === 'OK' ) {
-              var point = response.routes[ 0 ].legs[ 0 ];
-              gMapRequests[reqIndex].pessimisticTime = point.duration_in_traffic.text;
-              gMapRequests[reqIndex].status = kSuccess;
-            } else {
-              gMapRequests[reqIndex].status = kFailure;
-            }
-            refreshUI();
-          });           
+          setTimeout( function() {
+            request.drivingOptions.trafficModel = 
+              google.maps.TrafficModel.PESSIMISTIC; 
+            var directionsService = new google.maps.DirectionsService();
+            directionsService.route( request, onResponse ); 
+          }, delay+660 );
         }
       }
 
@@ -136,10 +154,10 @@
           html += "<td>" + gMapRequests[i].end + "</td>";
           html += "<td>" + gMapRequests[i].departTime.toLocaleTimeString()  + "</td>";
 
-          if( gMapRequests[i].status === 0 ) {
+          if( gMapRequests[i].status === kPending ) {
             html += "<td>Calculating</td>";
 
-          } else if( gMapRequests[i].status === 1 ) {
+          } else if( gMapRequests[i].status === kSuccess ) {
             if( gMapRequests[i].mode === google.maps.DirectionsTravelMode.DRIVING ) {
               html += "<td>" + gMapRequests[i].bestGuessTime 
                       + " (" + gMapRequests[i].optimisticTime + " - " 
@@ -148,7 +166,7 @@
               html += "<td>" + gMapRequests[i].bestGuessTime + "</td>";
             }
           } else {
-            html += "<td>Dunno!</td>";
+            html += "<td>Error! " + gMapRequests[i].errMsg + "</td>";
           }
         }
         html += "</table>";
@@ -156,42 +174,70 @@
       }
 
       function initMap() {
+        console.log("initMap: " + gPropertyOfInterest );
 
-        var req = new MapRequest();
-        req.start = gPropertyOfInterest;
-        req.end = "7120 Hurontario St, Mississauga, ON L5S 1Z8";
-        req.departTime = new Date('2018-08-20T08:00:00');
-        setTimeout( function() {startRequest( req );} ,1);
+        // Do nothing if no property specified
+        if( !gPropertyOfInterest ) {
+          return;
+        }
+
+        // clear existing results
+        // TODO: Must cancel requests currently in flight
+        // or at least invalidate them somehow. otherwise
+        // they will mess up the table.
+        gMapRequests = [];
+
+        var mrQueue = [];
+        var work1 = "7120 Hurontario St, Mississauga, ON L5S 1Z8";
+        var work2 = "101 College St, Toronto, ON M5G 1L7";
+
+        var mr = new MapRequest();
+        mr.start = gPropertyOfInterest;
+        mr.end = work1;
+        mr.departTime = new Date('2018-08-20T08:00:00');
+        mrQueue.push( mr );
 
         // reverse trip
-        var req2 = new MapRequest();
-        req2.start = req.end;
-        req2.end = req.start;
-        req2.departTime = new Date('2018-08-20T16:30:00');
-        setTimeout( function() {startRequest( req2 );} ,1000);
+        mr = new MapRequest();
+        mr.start = work1;
+        mr.end = gPropertyOfInterest;
+        mr.departTime = new Date('2018-08-20T16:30:00');
+        mrQueue.push( mr );
 
-        var req3 = new MapRequest();
-        req3.start = gPropertyOfInterest;
-        req3.end = "101 College St, Toronto, ON M5G 1L7";
-        req3.mode = google.maps.DirectionsTravelMode.TRANSIT;
-        req3.departTime = new Date('2018-06-20T09:00:00');
-        setTimeout( function() {startRequest( req3 );} ,2000);
+        mr = new MapRequest();
+        mr.start = gPropertyOfInterest;
+        mr.end = work1;
+        mr.departTime = new Date('2018-08-20T07:00:00');
+        mrQueue.push( mr );
 
         // reverse trip
-        var req4 = new MapRequest();
-        req4.start = req3.end;
-        req4.end = req3.start;
-        req4.mode = google.maps.DirectionsTravelMode.TRANSIT;        
-        req4.departTime = new Date('2018-06-20T17:30:00');
-        setTimeout( function() {startRequest( req4 );} ,3000);
+        mr = new MapRequest();
+        mr.start = gPropertyOfInterest;
+        mr.end = work1;
+        mr.departTime = new Date('2018-08-20T15:30:00');
+        mrQueue.push( mr );
+
+        mr = new MapRequest();
+        mr.start = gPropertyOfInterest;
+        mr.end = work2;
+        mr.mode = google.maps.DirectionsTravelMode.TRANSIT;
+        mr.departTime = new Date('2018-06-20T09:00:00');
+        mrQueue.push( mr );
+
+        // reverse trip
+        mr = new MapRequest();
+        mr.start = work2;
+        mr.end = gPropertyOfInterest;
+        mr.mode = google.maps.DirectionsTravelMode.TRANSIT;
+        mr.departTime = new Date('2018-06-20T17:30:00');
+        mrQueue.push( mr );
+
+        for( i = 0; i < mrQueue.length; ++i ) {
+          startRequest( mrQueue[i], i * 1000 );
+        }
 
         refreshUI();
 
-        map = new google.maps.Map(document.getElementById('map'), {
-          center: {lat: -25.344, lng: 131.036},
-          zoom: 8
-        });
-        
         // center the map around the property of interest
         var coder = new google.maps.Geocoder();
         var coderReq = {
@@ -209,12 +255,19 @@
             var marker = new google.maps.Marker( markerOpts )
           }
         });
+      }
 
-
+      function onGoogleMap() {
+        console.log("onGoogleMap");
+        
+        map = new google.maps.Map(document.getElementById('map'), {
+          center: {lat: -25.344, lng: 131.036},
+          zoom: 8
+        });        
       }
 
     </script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD3MaQdE7XUHMs8ibUkSDRJM0CimlaPiXI&callback=initMap"
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD3MaQdE7XUHMs8ibUkSDRJM0CimlaPiXI&callback=onGoogleMap"
     async defer></script>
   </body>
 </html>
