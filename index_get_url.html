@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Simple Map</title>
+    <meta name="viewport" content="initial-scale=1.0">
+    <meta charset="utf-8">
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+  </head>
+  <body>
+    <div>This is a test</div>
+    <div id="map"></div>
+    <div id="time"></div>
+    <div id="requests"></div>
+    <script>
+      $("#time").text("blah");
+
+      $.get( "https://mongohouse.com/api/newlistings?query=true&price_min=$0&price_max=$1,500,000&list_day_back=150&bedrooms=2&washrooms=0&ownershiptype=freehold&openhouse=undefined&south=43.60574802897248&west=-79.56744827351571&north=43.72706698718281&east=-79.40660156331063&_2dsphere=true", 
+        function( data ) {
+          // data contains an array of listings corresponding
+          // to the search criteria
+          $( "#map" ).text( data[0] );
+          $( "#time" ).text( JSON.stringify(data[0]) );
+          
+          // for each listing
+          //  extract the id
+          //  get the listing url
+          //  get the listing data
+          
+          var url = "https://mongohouse.com/newlistings/" + data[0]._id;
+          
+          $.get( url, 
+            function( data2 ) {
+              $( "#time" ).text( JSON.stringify(data2) );
+            }
+          );
+
+        }
+      );      
+    </script>
+  </body>
+</html>
